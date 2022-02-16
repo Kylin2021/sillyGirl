@@ -208,6 +208,7 @@ type BaseSender struct {
 	Atlast         bool
 	ToSendMessages []string
 	IsFinished     bool
+	Duration       *time.Duration
 }
 
 func (sender *BaseSender) SetMatch(ss []string) {
@@ -303,6 +304,22 @@ func (sender *BaseSender) GroupKick(uid string, reject_add_request bool) {
 
 func (sender *BaseSender) GroupBan(uid string, duration int) {
 
+}
+
+func (sender *BaseSender) GetUsername() string {
+	return ""
+}
+
+func (sender *BaseSender) IsAdmin() bool {
+	return false
+}
+
+func (sender *BaseSender) GetChatname() string {
+	return ""
+}
+
+func (sender *BaseSender) GetReplySenderUserID() int {
+	return 0
 }
 
 func (sender *BaseSender) AtLast() {

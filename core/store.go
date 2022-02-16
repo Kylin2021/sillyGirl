@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/boltdb/bolt"
 )
@@ -28,6 +29,10 @@ func NewBucket(name string) Bucket {
 	return b
 }
 
+func GetDB() *bolt.DB {
+	return db
+}
+
 func initStore() {
 	var err error
 	if runtime.GOOS == "darwin" {
@@ -41,21 +46,36 @@ func initStore() {
 }
 
 func (bucket Bucket) Set(key interface{}, value interface{}) {
-
 	db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		if b == nil {
 			b, _ = tx.CreateBucket([]byte(bucket))
 		}
 		k := fmt.Sprint(key)
-		v := fmt.Sprint(value)
-		if v == "" {
-			b.Delete([]byte(k))
+		if _, ok := value.([]byte); !ok {
+			v := fmt.Sprint(value)
+			if v == "" {
+				b.Delete([]byte(k))
+			} else {
+				b.Put([]byte(k), []byte(v))
+			}
 		} else {
-			b.Put([]byte(k), []byte(v))
+			if len(value.([]byte)) == 0 {
+				b.Delete([]byte(k))
+			} else {
+				b.Put([]byte(k), value.([]byte))
+			}
 		}
 		return nil
 	})
+}
+
+func (bucket Bucket) Push2Array(key, value string) {
+	bucket.Set(key, strings.Join(append(strings.Split(bucket.Get(key), ","), value), ","))
+}
+
+func (bucket Bucket) GetArray(key string) []string {
+	return strings.Split(bucket.Get(key), ",")
 }
 
 func (bucket Bucket) Get(kv ...interface{}) string {
@@ -67,12 +87,28 @@ func (bucket Bucket) Get(kv ...interface{}) string {
 			value = fmt.Sprint(kv[1])
 		}
 	}
+
 	db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		if b == nil {
 			return nil
 		}
 		if v := string(b.Get([]byte(key))); v != "" {
+			value = v
+		}
+		return nil
+	})
+	return value
+}
+
+func (bucket Bucket) GetBytes(key string) []byte {
+	var value []byte
+	db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return nil
+		}
+		if v := b.Get([]byte(key)); v != nil {
 			value = v
 		}
 		return nil

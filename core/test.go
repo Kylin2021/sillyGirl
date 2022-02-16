@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/adapter/httplib"
+	"github.com/boltdb/bolt"
 )
 
 func init() {
@@ -155,21 +156,27 @@ func initSys() {
 			},
 		},
 		{
-			Rules: []string{"raw ^升级$"},
+			Rules: []string{"升级 ?", "^升级$"},
 			// Cron:  "*/1 * * * *",
 			Admin: true,
 			Handle: func(s Sender) interface{} {
 				if runtime.GOOS == "windows" {
 					return "windows系统不支持此命令"
 				}
-
 				if s.GetImType() == "fake" && !sillyGirl.GetBool("auto_update", true) && compiled_at == "" {
 					return nil
 				}
-
+				var kz = s.Get(0)
 				if compiled_at != "" {
 					str := ""
-					for _, prefix := range []string{""} {
+					pxs := []string{}
+					if p := sillyGirl.Get("download_prefix"); p != "" {
+						pxs = append(pxs, p)
+					}
+					pxs = append(pxs, "")
+					pxs = append(pxs, "http://github.yanyuge.workers.dev/")
+					pxs = append(pxs, "https://ghproxy.com/")
+					for _, prefix := range pxs {
 						if str == "" && s.GetImType() != "fake" {
 							if v, ok := OttoFuncs["version"]; ok {
 								if rt := v.(func(string) string)(""); rt != "" {
@@ -250,7 +257,7 @@ func initSys() {
 							continue
 						}
 					}
-					return `无法升级，你网不好。建议您手动于linux执行一键升级命令： s=sillyGirl;a=arm64;if [[ $(uname -a | grep "x86_64") != "" ]];then a=amd64;fi ;if [ ! -d $s ];then mkdir $s;fi ;cd $s;wget https://mirror.ghproxy.com/https://github.com/cdle/${s}/releases/download/main/${s}_linux_$a -O $s && chmod 777 $s;pkill -9 $s;$(pwd)/$s`
+					return `无法升级，你网不好。建议您手动于linux执行一键升级命令： s=sillyGirl;a=arm64;if [[ $(uname -a | grep "x86_64") != "" ]];then a=amd64;fi ;if [ ! -d $s ];then mkdir $s;fi ;cd $s;wget https://github.com/cdle/${s}/releases/download/main/${s}_linux_$a -O $s && chmod 777 $s;pkill -9 $s;$(pwd)/$s`
 				}
 
 				s.Reply("开始检查核心更新...", E)
@@ -260,20 +267,26 @@ func initSys() {
 						update = true
 					}
 				}
-				need, err := GitPull("")
-				if err != nil {
-					return "请使用以下命令手动升级：\n cd " + ExecPath + " && git stash && git pull && go build && ./" + pname
+				var need bool
+				var err error
+				if kz == "" || kz == "core" {
+					need, err = GitPull("")
+					if err != nil {
+						return "请使用以下命令手动升级：\n cd " + ExecPath + " && git stash && git pull && go build && ./" + pname
+					}
+					if !need {
+						s.Reply("核心功能已是最新。", E)
+					} else {
+						record(need)
+						s.Reply("核心功能发现更新。", E)
+					}
 				}
-				if !need {
-					s.Reply("核心功能已是最新。", E)
-				} else {
-					record(need)
-					s.Reply("核心功能发现更新。", E)
-				}
+
 				files, _ := ioutil.ReadDir(ExecPath + "/develop")
 				for _, f := range files {
 					if f.IsDir() && f.Name() != "replies" {
-						if f.Name() == "qinglong" {
+
+						if kz != "" && kz != f.Name() {
 							continue
 						}
 						if strings.HasPrefix(f.Name(), "_") {
@@ -340,7 +353,13 @@ func initSys() {
 			Rules: []string{"raw ^status$"},
 			Admin: true,
 			Handle: func(s Sender) interface{} {
-				return fmt.Sprintf("总计：%d，已处理：%d，运行中：%d", total, finished, total-finished)
+				s.Disappear()
+				ss := []string{}
+				cts.Range(func(key, value interface{}) bool {
+					ss = append(ss, fmt.Sprintf("%v. %v", key, value))
+					return true
+				})
+				return fmt.Sprintf("总计：%d，已处理：%d，运行中：%d\n\n%s", total, finished, total-finished, strings.Join(ss, "\n"))
 			},
 		},
 		{
@@ -406,7 +425,7 @@ func initSys() {
 		},
 		{
 			Admin: true,
-			Rules: []string{"empty ? ?", "? empty ?"},
+			Rules: []string{"empty ?", "empty ? ?", "? empty ?"},
 			Handle: func(s Sender) interface{} {
 				name := s.Get(0)
 				filter := s.Get(1)
@@ -418,11 +437,22 @@ func initSys() {
 					a = "中包含" + filter
 				}
 				s.Reply("20秒内回复任意取消清空" + name + a + "的记录。")
+
 				switch s.Await(s, nil, time.Second*20) {
 				case nil:
 				case "快":
 				default:
 					return "已取消。"
+				}
+				if filter == "" {
+					db.Update(func(t *bolt.Tx) error {
+						err := t.DeleteBucket([]byte(name))
+						if err != nil {
+							s.Reply(err)
+						}
+						return nil
+					})
+					return fmt.Sprintf("已清空。")
 				}
 				b := Bucket(name)
 				i := 0

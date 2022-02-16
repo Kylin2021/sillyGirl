@@ -7,9 +7,10 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
-	"time"
 
+	"github.com/beego/beego/v2/core/logs"
 	cron "github.com/robfig/cron/v3"
 )
 
@@ -54,7 +55,11 @@ func initToHandleMessage() {
 	Senders = make(chan Sender)
 	go func() {
 		for {
-			go handleMessage(<-Senders)
+			s := <-Senders
+			if s.GetImType() != "terminal" {
+				logs.Info("接收到消息：%s", s.GetContent())
+			}
+			go HandleMessage(s)
 		}
 	}()
 }
@@ -120,10 +125,17 @@ func AddCommand(prefix string, cmds []Function) {
 	}
 }
 
-func handleMessage(sender Sender) {
-	atomic.AddUint64(&total, 1)
+var cts sync.Map
+
+func HandleMessage(sender Sender) {
+	num := atomic.AddUint64(&total, 1)
 	defer atomic.AddUint64(&finished, 1)
-	content := TrimHiddenCharacter(sender.GetContent())
+	ct := sender.GetContent()
+	cts.Store(num, ct)
+	defer func() {
+		cts.Delete(num)
+	}()
+	content := TrimHiddenCharacter(ct)
 	defer func() {
 		sender.Finish()
 		if sender.IsAtLast() {
@@ -209,7 +221,6 @@ func handleMessage(sender Sender) {
 	for _, function := range functions {
 		for _, rule := range function.Rules {
 			var matched bool
-
 			if function.FindAll {
 				if res := regexp.MustCompile(rule).FindAllStringSubmatch(content, -1); len(res) > 0 {
 					tmp := [][]string{}
@@ -231,7 +242,7 @@ func handleMessage(sender Sender) {
 					sender.Delete()
 					sender.Disappear()
 					// if sender.GetImType() != "wx" && sender.GetImType() != "qq" {
-					sender.Reply("再捣乱我就报警啦～")
+					// sender.Reply("再捣乱我就报警啦～")
 					// }
 					return
 				}
@@ -259,7 +270,7 @@ func handleMessage(sender Sender) {
 				if reg.FindString(content) != "" {
 					if !sender.IsAdmin() && sender.GetImType() != "wx" {
 						sender.Delete()
-						sender.Reply("本妞清除了不好的消息～", time.Duration(time.Second))
+						// sender.Reply("本妞清除了不好的消息～", time.Duration(time.Second))
 						recalled = true
 						break
 					}

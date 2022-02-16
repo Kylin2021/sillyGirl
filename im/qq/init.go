@@ -129,6 +129,9 @@ func init() {
 		}
 		logs.Info("QQ机器人(%s)已连接。", botID)
 		core.Pushs["qq"] = func(i interface{}, s string, _ interface{}, botID string) {
+			if qq.GetBool("ban_one2one") && !strings.Contains(qq.Get("masters"), fmt.Sprint(i)) {
+				return
+			}
 			if botID == "" {
 				botID = defaultBot
 			}
@@ -302,10 +305,6 @@ func (sender *Sender) IsReply() bool {
 	return false
 }
 
-func (sender *Sender) GetReplySenderUserID() int {
-	return 0
-}
-
 func (sender *Sender) GetRawMessage() interface{} {
 	return sender.Message
 }
@@ -358,7 +357,6 @@ func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
 			return []string{}, nil
 		}
 	}
-	msg := msgs[0]
 	rt := ""
 	for _, item := range msgs {
 		switch item.(type) {
@@ -366,16 +364,15 @@ func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
 			du := item.(time.Duration)
 			sender.Duration = &du
 		case error:
-			rt = fmt.Sprint(msg)
+			rt = fmt.Sprint(item)
 		case string:
-			rt = msg.(string)
+			rt = item.(string)
 		case []byte:
-			rt = string(msg.([]byte))
+			rt = string(item.([]byte))
 		case core.ImageUrl:
-			rt = `[CQ:image,file=` + string(msg.(core.ImageUrl)) + `]`
+			rt = `[CQ:image,file=` + string(item.(core.ImageUrl)) + `]`
 		case core.VideoUrl:
-			rt = `[CQ:video,file=` + string(msg.(core.VideoUrl)) + `]`
-
+			rt = `[CQ:video,file=` + string(item.(core.VideoUrl)) + `]`
 		}
 	}
 	if rt == "" {
@@ -435,10 +432,6 @@ func (sender *Sender) Copy() core.Sender {
 
 func (sender *Sender) GetUsername() string {
 	return sender.Message.Sender.Nickname
-}
-
-func (sender *Sender) GetChatname() string {
-	return ""
 }
 
 func (sender *Sender) RecallMessage(ps ...interface{}) error {
